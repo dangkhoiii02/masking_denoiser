@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hệ thống Khử Ồn AI (ESP32-S3)</title>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; border-bottom: 1px solid #30363d; padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { color: #58a6ff; margin: 0; }
+        .status { color: #8b949e; font-size: 14px; margin-top: 5px; }
+        .dashboard { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px; }
+        h3 { margin-top: 0; font-size: 16px; margin-bottom: 10px; display: flex; justify-content: space-between;}
+        .badge-red { color: #ff7b72; font-weight: bold; }
+        .badge-green { color: #3fb950; font-weight: bold; }
+        canvas { background-color: #000000; width: 100%; height: 180px; border-radius: 4px; display: block; border: 1px solid #21262d;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎙️ Hệ thống Khử ồn Thời gian thực (TFLite)</h1>
+            <div class="status" id="statusText">🔴 Đang chờ kết nối với Python Server...</div>
+        </div>
+        
+        <div class="dashboard">
+            <div class="card">
+                <h3><span>Sóng âm gốc (Từ ESP32)</span> <span class="badge-red">RAW INPUT</span></h3>
+                <canvas id="rawCanvas" width="1150" height="180"></canvas>
+            </div>
+            <div class="card">
+                <h3><span>Sóng âm sau khi khử ồn</span> <span class="badge-green">AI FILTERED</span></h3>
+                <canvas id="cleanCanvas" width="1150" height="180"></canvas>
+            </div>
+            <div class="card">
+                <h3><span>Phân tích dải tần số (FFT)</span> <span>SPECTRUM</span></h3>
+                <canvas id="fftCanvas" width="1150" height="180"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const rawCtx = document.getElementById('rawCanvas').getContext('2d');
+        const cleanCtx = document.getElementById('cleanCanvas').getContext('2d');
+        const fftCtx = document.getElementById('fftCanvas').getContext('2d');
+        const statusText = document.getElementById('statusText');
+
+        const ws = new WebSocket("ws://localhost:8000/ws");
+        
+        ws.onopen = () => statusText.innerHTML = "🟢 Kết nối Server: <span style='color:#3fb950'>LIVE - Đang thu & phát ra loa</span>";
+        ws.onclose = () => statusText.innerHTML = "🔴 Mất kết nối. Đang thử lại...";
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            drawWave(rawCtx, data.raw_wave, '#ff7b72');
+            drawWave(cleanCtx, data.clean_wave, '#3fb950');
+            drawFFT(fftCtx, data.fft);
+        };
+
+        function drawWave(ctx, waveData, color) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            const sliceWidth = ctx.canvas.width / waveData.length;
+            let x = 0;
+            for (let i = 0; i < waveData.length; i++) {
+                const normalized = waveData[i] / 32768.0; 
+                const y = (-(normalized * 4) * (ctx.canvas.height / 2)) + (ctx.canvas.height / 2);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+                x += sliceWidth;
+            }
+            ctx.stroke();
+        }
+
+        function drawFFT(ctx, fftData) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            const barWidth = (ctx.canvas.width / fftData.length) * 2;
+            let x = 0;
+            for (let i = 0; i < fftData.length; i++) {
+                let barHeight = fftData[i] * 1.5; 
+                if (barHeight > ctx.canvas.height) barHeight = ctx.canvas.height;
+                const hue = i / fftData.length * 360;
+                ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                ctx.fillRect(x, ctx.canvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+        }
+    </script>
+</body>
+</html>
